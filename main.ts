@@ -4,8 +4,10 @@
 // quarter of a percent, chasing every wiggle bleeds fees. This bot therefore sits in cash and
 // waits for a shallow dip — a fall of at least 0.5% over the trailing 45 minutes — that has
 // stopped falling (the last five minutes are flat or up). It buys with half the account, and
-// if the tape keeps sliding to a 1.0% fall over the same window it adds the second half,
-// averaging the entry down. It exits on a +2.0% take-profit over the blended fill price, a
+// if the tape slides on to a 1.0% fall over the same window and then stops falling the same
+// way, it adds the second half, averaging the entry down. Both legs demand the stabilised
+// tape: averaging down into a fall that is still accelerating is how this kind of rule gives
+// its edge back, so the second leg waits for the same flat-or-up five minutes as the first. It exits on a +2.0% take-profit over the blended fill price, a
 // 0.8% trailing stop under the best close since entry, a 1.2% hard stop, or after six hours.
 //
 // Why these numbers: the dev window is a choppy, nearly flat tape (about +0.5% over the day,
@@ -103,11 +105,13 @@ await runBars({
     barsHeld += 1;
     if (peakClose === null || close > peakClose) peakClose = close;
 
-    // Second leg: the dip deepened after the first buy, so average down with the rest.
-    if (buyFills === 1 && state.cash > 0n && closes.length > DIP_WINDOW) {
+    // Second leg: the dip deepened after the first buy and has stopped falling,
+    // so average down with the rest. The stabilisation gate is the same as leg one's.
+    if (buyFills === 1 && state.cash > 0n && closes.length > DIP_WINDOW && closes.length > STABLE_WINDOW) {
       const last = closes[closes.length - 1];
       const dip = last / closes[closes.length - 1 - DIP_WINDOW] - 1;
-      if (dip <= -DIP_SECOND) {
+      const stable = last / closes[closes.length - 1 - STABLE_WINDOW] - 1;
+      if (dip <= -DIP_SECOND && stable >= STABLE_FLOOR) {
         const order: BuyInput = {
           side: 'buy',
           symbol: SYMBOL,
